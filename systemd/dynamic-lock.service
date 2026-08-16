@@ -4,10 +4,10 @@ After=bluetooth.target graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=/home/adil/.local/bin/dynamic-lock
+ExecStart=%h/.local/bin/dynamic-lock
 Restart=on-failure
 RestartSec=3s
-Environment="PATH=/home/adil/.local/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin"
 Environment="PYTHONUNBUFFERED=1"
 
 [Install]

@@ -55,8 +55,8 @@ class DynamicLockMenu extends PanelMenu.Button {
         return {
             enabled: true,
             preset: 'strict',
-            device_mac: '3C:B0:ED:DC:A2:39',
-            device_name: 'Nothing Phone (3)',
+            device_mac: '',
+            device_name: '',
             lq_threshold: 95,
             delay_seconds: 1.0
         };
@@ -132,7 +132,7 @@ class DynamicLockMenu extends PanelMenu.Button {
         let settingsItem = new PopupMenu.PopupMenuItem('⚙️ Réglages complets...');
         settingsItem.connect('activate', () => {
             try {
-                GLib.spawn_command_line_async('/home/adil/.local/bin/dynamic-lock-gui');
+                GLib.spawn_command_line_async('dynamic-lock-gui');
             } catch (e) {}
         });
         this.menu.addMenuItem(settingsItem);
