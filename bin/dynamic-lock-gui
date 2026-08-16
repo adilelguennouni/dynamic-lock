@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Dynamic Lock GUI Manager for Linux / Pop!_OS.
-Allows selecting Bluetooth devices, customizing distance and timeout sliders,
-and visualizing live signal metrics in real-time.
+Allows selecting Bluetooth devices, choosing proximity bands/presets (Bureau, Pièce, Sortie),
+customizing distance and timeout sliders, and visualizing live signal metrics in real-time.
 Adapts dynamically to the system's Dark / Light theme.
 """
 
@@ -18,13 +18,42 @@ from gi.repository import Gtk, GLib, Gio, Gdk
 CONFIG_DIR = os.path.expanduser('~/.config/dynamic-lock')
 CONFIG_PATH = os.path.join(CONFIG_DIR, 'config.json')
 
+PRESETS = {
+    "strict": {
+        "name": "🎯 Bureau Strict (0 - 1m)",
+        "lq_threshold": 95,
+        "rssi_threshold": -2,
+        "delay_seconds": 1.0,
+        "desc": "Verrouillage instantané dès les premiers pas hors du bureau."
+    },
+    "comfort": {
+        "name": "🛋️ Pièce / Confort (2 - 3m)",
+        "lq_threshold": 80,
+        "rssi_threshold": -6,
+        "delay_seconds": 2.5,
+        "desc": "Permet de bouger autour du bureau sans couper la session."
+    },
+    "exit": {
+        "name": "🚪 Sortie de Pièce (+4m)",
+        "lq_threshold": 60,
+        "rssi_threshold": -12,
+        "delay_seconds": 4.0,
+        "desc": "Ne verrouille qu'en quittant la pièce ou derrière un mur épais."
+    },
+    "custom": {
+        "name": "🎛️ Personnalisé (Manuel)",
+        "desc": "Ajustement libre des curseurs selon vos besoins."
+    }
+}
+
 DEFAULT_CONFIG = {
     "enabled": True,
+    "preset": "strict",
     "device_mac": "3C:B0:ED:DC:A2:39",
     "device_name": "Nothing Phone (3)",
-    "lq_threshold": 90,
+    "lq_threshold": 95,
     "rssi_threshold": -2,
-    "delay_seconds": 2.0,
+    "delay_seconds": 1.0,
     "check_interval": 1.0,
     "unlock_grace_period": 60
 }
@@ -32,11 +61,13 @@ DEFAULT_CONFIG = {
 class DynamicLockApp(Gtk.Window):
     def __init__(self):
         super().__init__(title="Verrouillage Dynamique")
-        self.set_default_size(480, 600)
+        self.set_default_size(500, 680)
         self.set_position(Gtk.WindowPosition.CENTER)
         self.set_border_width(16)
 
-        # Setup Dynamic System Theme Listener
+        self.updating_ui_from_preset = False
+
+        # Theme Listener
         self.init_theme_sync()
 
         # Load config
@@ -47,7 +78,7 @@ class DynamicLockApp(Gtk.Window):
         self.load_devices()
         self.apply_config_to_ui()
 
-        # Timer for live signal updates (every 500ms)
+        # Live signal loop (every 500ms)
         GLib.timeout_add(500, self.update_live_signal)
 
     def init_theme_sync(self):
@@ -115,7 +146,7 @@ class DynamicLockApp(Gtk.Window):
         card_dev.add(box_dev)
 
         lbl_dev_title = Gtk.Label(xalign=0)
-        lbl_dev_title.set_markup("<b>📱 Appareil Bluetooth à suivre</b>")
+        lbl_dev_title.set_markup("<b>📱 Appareil Bluetooth surveillé</b>")
         box_dev.pack_start(lbl_dev_title, False, False, 0)
 
         dev_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -125,14 +156,37 @@ class DynamicLockApp(Gtk.Window):
         dev_row.pack_start(self.combo_devices, True, True, 0)
 
         btn_refresh = Gtk.Button.new_from_icon_name("view-refresh-symbolic", Gtk.IconSize.BUTTON)
-        btn_refresh.set_tooltip_text("Rafraîchir les appareils Bluetooth")
+        btn_refresh.set_tooltip_text("Rafraîchir les périphériques")
         btn_refresh.connect("clicked", lambda b: self.load_devices())
         dev_row.pack_start(btn_refresh, False, False, 0)
         box_dev.pack_start(dev_row, False, False, 0)
 
         main_box.pack_start(card_dev, False, False, 0)
 
-        # --- Section 2 : Moniteur de Signal en Direct ---
+        # --- Section 2 : Bandes de Proximité & Profils ---
+        card_presets = Gtk.Frame()
+        card_presets.set_shadow_type(Gtk.ShadowType.ETCHED_IN)
+        box_presets = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box_presets.set_border_width(12)
+        card_presets.add(box_presets)
+
+        lbl_presets_title = Gtk.Label(xalign=0)
+        lbl_presets_title.set_markup("<b>📶 Bande de sensibilité / Profil de distance</b>")
+        box_presets.pack_start(lbl_presets_title, False, False, 0)
+
+        self.combo_presets = Gtk.ComboBoxText()
+        for key, pinfo in PRESETS.items():
+            self.combo_presets.append(key, pinfo["name"])
+        self.combo_presets.connect("changed", self.on_preset_changed)
+        box_presets.pack_start(self.combo_presets, False, False, 0)
+
+        self.lbl_preset_desc = Gtk.Label(xalign=0)
+        self.lbl_preset_desc.set_markup("<small><i>Description du profil</i></small>")
+        box_presets.pack_start(self.lbl_preset_desc, False, False, 0)
+
+        main_box.pack_start(card_presets, False, False, 0)
+
+        # --- Section 3 : Moniteur de Signal en Direct ---
         card_sig = Gtk.Frame()
         card_sig.set_shadow_type(Gtk.ShadowType.ETCHED_IN)
         box_sig = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
@@ -154,12 +208,12 @@ class DynamicLockApp(Gtk.Window):
         box_sig.pack_start(self.lbl_signal_detail, False, False, 0)
 
         self.lbl_status_badge = Gtk.Label(xalign=0)
-        self.lbl_status_badge.set_markup("<span color='#2ecc71'>● Connecté et à proximité immédiate</span>")
+        self.lbl_status_badge.set_markup("<span color='#2ecc71'>● Connecté et à proximité</span>")
         box_sig.pack_start(self.lbl_status_badge, False, False, 0)
 
         main_box.pack_start(card_sig, False, False, 0)
 
-        # --- Section 3 : Réglages personnalisables ---
+        # --- Section 4 : Réglages personnalisables ---
         card_settings = Gtk.Frame()
         card_settings.set_shadow_type(Gtk.ShadowType.ETCHED_IN)
         box_settings = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -167,14 +221,14 @@ class DynamicLockApp(Gtk.Window):
         card_settings.add(box_settings)
 
         lbl_sett_title = Gtk.Label(xalign=0)
-        lbl_sett_title.set_markup("<b>⚙️ Personnalisation de la sensibilité</b>")
+        lbl_sett_title.set_markup("<b>⚙️ Détail des seuils</b>")
         box_settings.pack_start(lbl_sett_title, False, False, 0)
 
         # Slider 1: Seuil de proximité / Distance
         box_lq = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         lq_header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        lbl_lq = Gtk.Label(label="Sensibilité de distance (Seuil) :", xalign=0)
-        self.lbl_lq_val = Gtk.Label(label="90%", xalign=1)
+        lbl_lq = Gtk.Label(label="Seuil de Qualité (%) :", xalign=0)
+        self.lbl_lq_val = Gtk.Label(label="95%", xalign=1)
         lq_header.pack_start(lbl_lq, True, True, 0)
         lq_header.pack_start(self.lbl_lq_val, False, False, 0)
         box_lq.pack_start(lq_header, False, False, 0)
@@ -183,17 +237,13 @@ class DynamicLockApp(Gtk.Window):
         self.scale_lq.set_draw_value(False)
         self.scale_lq.connect("value-changed", self.on_lq_scale_changed)
         box_lq.pack_start(self.scale_lq, False, False, 0)
-
-        lbl_lq_desc = Gtk.Label(xalign=0)
-        lbl_lq_desc.set_markup("<small><i>90-95% : Verrouille dès les premiers pas hors du bureau.<br>70-80% : Plus tolérant (permet de bouger dans la pièce).</i></small>")
-        box_lq.pack_start(lbl_lq_desc, False, False, 0)
         box_settings.pack_start(box_lq, False, False, 0)
 
         # Slider 2: Délai de réaction avant verrouillage
         box_delay = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         delay_header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         lbl_delay = Gtk.Label(label="Délai avant verrouillage :", xalign=0)
-        self.lbl_delay_val = Gtk.Label(label="2.0s", xalign=1)
+        self.lbl_delay_val = Gtk.Label(label="1.0s", xalign=1)
         delay_header.pack_start(lbl_delay, True, True, 0)
         delay_header.pack_start(self.lbl_delay_val, False, False, 0)
         box_delay.pack_start(delay_header, False, False, 0)
@@ -202,15 +252,11 @@ class DynamicLockApp(Gtk.Window):
         self.scale_delay.set_draw_value(False)
         self.scale_delay.connect("value-changed", self.on_delay_scale_changed)
         box_delay.pack_start(self.scale_delay, False, False, 0)
-
-        lbl_delay_desc = Gtk.Label(xalign=0)
-        lbl_delay_desc.set_markup("<small><i>Temps continu d'éloignement requis avant verrouillage.</i></small>")
-        box_delay.pack_start(lbl_delay_desc, False, False, 0)
         box_settings.pack_start(box_delay, False, False, 0)
 
         main_box.pack_start(card_settings, False, False, 0)
 
-        # --- Section 4 : Boutons de test ---
+        # --- Section 5 : Actions ---
         btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         btn_test = Gtk.Button.new_with_label("🔒 Tester le verrouillage immédiat")
         btn_test.connect("clicked", lambda b: subprocess.run(['loginctl', 'lock-session']))
@@ -240,14 +286,22 @@ class DynamicLockApp(Gtk.Window):
             self.combo_devices.set_active(0)
 
     def apply_config_to_ui(self):
+        self.updating_ui_from_preset = True
         self.switch_enabled.set_active(self.config.get("enabled", True))
-        lq = self.config.get("lq_threshold", 90)
+        
+        preset_key = self.config.get("preset", "strict")
+        if preset_key in PRESETS:
+            self.combo_presets.set_active_id(preset_key)
+            self.lbl_preset_desc.set_markup(f"<small><i>{PRESETS[preset_key]['desc']}</i></small>")
+
+        lq = self.config.get("lq_threshold", 95)
         self.scale_lq.set_value(lq)
         self.lbl_lq_val.set_text(f"{int(lq)}%")
 
-        delay = self.config.get("delay_seconds", 2.0)
+        delay = self.config.get("delay_seconds", 1.0)
         self.scale_delay.set_value(delay)
         self.lbl_delay_val.set_text(f"{delay:.1f}s")
+        self.updating_ui_from_preset = False
 
     def on_switch_toggled(self, switch, state):
         self.config["enabled"] = state
@@ -263,16 +317,46 @@ class DynamicLockApp(Gtk.Window):
                     break
             self.save_config()
 
+    def on_preset_changed(self, combo):
+        preset_key = combo.get_active_id()
+        if not preset_key or preset_key not in PRESETS:
+            return
+
+        self.lbl_preset_desc.set_markup(f"<small><i>{PRESETS[preset_key]['desc']}</i></small>")
+        self.config["preset"] = preset_key
+
+        if preset_key != "custom":
+            pinfo = PRESETS[preset_key]
+            self.updating_ui_from_preset = True
+            self.config["lq_threshold"] = pinfo["lq_threshold"]
+            self.config["rssi_threshold"] = pinfo["rssi_threshold"]
+            self.config["delay_seconds"] = pinfo["delay_seconds"]
+
+            self.scale_lq.set_value(pinfo["lq_threshold"])
+            self.lbl_lq_val.set_text(f"{pinfo['lq_threshold']}%")
+
+            self.scale_delay.set_value(pinfo["delay_seconds"])
+            self.lbl_delay_val.set_text(f"{pinfo['delay_seconds']:.1f}s")
+            self.updating_ui_from_preset = False
+
+        self.save_config()
+
     def on_lq_scale_changed(self, scale):
         val = int(scale.get_value())
         self.lbl_lq_val.set_text(f"{val}%")
         self.config["lq_threshold"] = val
+        if not self.updating_ui_from_preset:
+            self.config["preset"] = "custom"
+            self.combo_presets.set_active_id("custom")
         self.save_config()
 
     def on_delay_scale_changed(self, scale):
         val = round(scale.get_value(), 1)
         self.lbl_delay_val.set_text(f"{val:.1f}s")
         self.config["delay_seconds"] = val
+        if not self.updating_ui_from_preset:
+            self.config["preset"] = "custom"
+            self.combo_presets.set_active_id("custom")
         self.save_config()
 
     def update_live_signal(self):
@@ -323,7 +407,7 @@ class DynamicLockApp(Gtk.Window):
             
             if lq >= thresh:
                 self.progress_signal.set_text(f"{lq}% (À portée)")
-                self.lbl_status_badge.set_markup("<span color='#2ecc71'>● Connecté et à proximité immédiate</span>")
+                self.lbl_status_badge.set_markup("<span color='#2ecc71'>● Connecté et à proximité</span>")
             else:
                 self.progress_signal.set_text(f"{lq}% (Sous le seuil de {thresh}%)")
                 self.lbl_status_badge.set_markup("<span color='#f39c12'>● Éloignement détecté</span>")
