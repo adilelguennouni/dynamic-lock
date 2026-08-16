@@ -1,0 +1,16 @@
+{
+  "name": "Dynamic Lock Indicator",
+  "description": "Native GNOME Shell top panel menu to monitor signal, battery, and quick-switch proximity distance profiles for Dynamic Lock",
+  "uuid": "dynamic-lock@adilelguennouni",
+  "url": "https://github.com/adilelguennouni/dynamic-lock",
+  "shell-version": [
+    "42",
+    "42.9",
+    "43",
+    "44",
+    "45",
+    "46",
+    "47"
+  ],
+  "version": 1
+}

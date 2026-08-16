@@ -1,0 +1,21 @@
+.dynamic-lock-status-connected {
+    color: #2ecc71;
+    font-weight: bold;
+}
+
+.dynamic-lock-status-warning {
+    color: #f39c12;
+    font-weight: bold;
+}
+
+.dynamic-lock-status-disconnected {
+    color: #e74c3c;
+    font-weight: bold;
+}
+
+.dynamic-lock-badge {
+    padding: 2px 8px;
+    border-radius: 12px;
+    background-color: rgba(255, 255, 255, 0.1);
+    font-size: 0.85em;
+}
