@@ -16,8 +16,8 @@ CONFIG_PATH = os.path.expanduser('~/.config/dynamic-lock/config.json')
 
 DEFAULT_CONFIG = {
     "enabled": True,
-    "device_mac": "",
-    "device_name": "",
+    "device_mac": "3C:B0:ED:DC:A2:39",
+    "device_name": "Nothing Phone (3)",
     "lq_threshold": 90,
     "rssi_threshold": -2,
     "delay_seconds": 2.0,

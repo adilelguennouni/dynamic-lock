@@ -1,6 +1,7 @@
 /*
  * Dynamic Lock Indicator - GNOME Shell Extension
  * Native Pop!_OS / GNOME Top Bar Menu for Bluetooth Proximity Lock
+ * With Device Switcher, Telemetry, Battery, and Quick Proximity Presets.
  */
 
 const { GObject, St, Clutter, GLib, Gio } = imports.gi;
@@ -55,8 +56,8 @@ class DynamicLockMenu extends PanelMenu.Button {
         return {
             enabled: true,
             preset: 'strict',
-            device_mac: '',
-            device_name: '',
+            device_mac: '3C:B0:ED:DC:A2:39',
+            device_name: 'Nothing Phone (3)',
             lq_threshold: 95,
             delay_seconds: 1.0
         };
@@ -70,6 +71,26 @@ class DynamicLockMenu extends PanelMenu.Button {
         } catch (e) {
             log('Error saving dynamic-lock config: ' + e);
         }
+    }
+
+    _getPairedDevices() {
+        let list = [];
+        try {
+            let [ok, out] = GLib.spawn_command_line_sync('bluetoothctl devices');
+            if (ok) {
+                let text = imports.byteArray.toString(out);
+                let lines = text.split('\n');
+                for (let line of lines) {
+                    let parts = line.trim().split(' ');
+                    if (parts.length >= 3 && parts[0] === 'Device') {
+                        let mac = parts[1];
+                        let name = parts.slice(2).join(' ');
+                        list.push({ mac: mac, name: name });
+                    }
+                }
+            }
+        } catch (e) {}
+        return list;
     }
 
     _buildMenu() {
@@ -99,8 +120,13 @@ class DynamicLockMenu extends PanelMenu.Button {
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
-        // 4. Proximity Presets Submenu
-        this._presetSubMenu = new PopupMenu.PopupSubMenuMenuItem('Bande de sensibilité');
+        // 4. Submenu : Changer d'appareil Bluetooth
+        this._devicesSubMenu = new PopupMenu.PopupSubMenuMenuItem('📱 Changer d\'appareil');
+        this._populateDevicesSubmenu();
+        this.menu.addMenuItem(this._devicesSubMenu);
+
+        // 5. Submenu : Proximity Presets
+        this._presetSubMenu = new PopupMenu.PopupSubMenuMenuItem('📶 Bande de sensibilité');
         let currentPreset = this._config.preset || 'strict';
 
         this._presetItems = {};
@@ -120,7 +146,7 @@ class DynamicLockMenu extends PanelMenu.Button {
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
-        // 5. Actions: Open GUI & Lock Now
+        // 6. Actions: Open GUI & Lock Now
         let lockItem = new PopupMenu.PopupMenuItem('🔒 Verrouiller la session maintenant');
         lockItem.connect('activate', () => {
             try {
@@ -136,6 +162,27 @@ class DynamicLockMenu extends PanelMenu.Button {
             } catch (e) {}
         });
         this.menu.addMenuItem(settingsItem);
+    }
+
+    _populateDevicesSubmenu() {
+        this._devicesSubMenu.menu.removeAll();
+        let devices = this._getPairedDevices();
+        let curMac = this._config.device_mac;
+
+        for (let dev of devices) {
+            let item = new PopupMenu.PopupMenuItem(dev.name);
+            if (dev.mac === curMac) {
+                item.setOrnament(PopupMenu.Ornament.DOT);
+            }
+            item.connect('activate', () => {
+                this._config.device_mac = dev.mac;
+                this._config.device_name = dev.name;
+                this._saveConfig();
+                this._buildMenu();
+                this._updateTelemetry();
+            });
+            this._devicesSubMenu.menu.addMenuItem(item);
+        }
     }
 
     _selectPreset(presetKey) {
