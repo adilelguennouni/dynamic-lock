@@ -1,0 +1,193 @@
+#!/usr/bin/env python3
+"""
+Dynamic Lock Daemon for Linux / Pop!_OS.
+Includes intelligent Grace Period on manual unlock to prevent lock-out loops.
+"""
+
+import time
+import json
+import os
+import subprocess
+import gi
+gi.require_version('Gio', '2.0')
+from gi.repository import Gio
+
+CONFIG_PATH = os.path.expanduser('~/.config/dynamic-lock/config.json')
+
+DEFAULT_CONFIG = {
+    "enabled": True,
+    "device_mac": "3C:B0:ED:DC:A2:39",
+    "device_name": "Nothing Phone (3)",
+    "lq_threshold": 90,
+    "rssi_threshold": -2,
+    "delay_seconds": 2.0,
+    "check_interval": 1.0,
+    "unlock_grace_period": 60  # seconds of peace after manual password unlock if phone is offline
+}
+
+def load_config():
+    try:
+        if os.path.exists(CONFIG_PATH):
+            with open(CONFIG_PATH, 'r') as f:
+                return {**DEFAULT_CONFIG, **json.load(f)}
+    except Exception:
+        pass
+    return DEFAULT_CONFIG
+
+def is_screen_locked():
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        res = bus.call_sync(
+            'org.gnome.ScreenSaver',
+            '/org/gnome/ScreenSaver',
+            'org.gnome.ScreenSaver',
+            'GetActive',
+            None,
+            None,
+            Gio.DBusCallFlags.NONE,
+            -1,
+            None
+        )
+        return bool(res.unpack()[0])
+    except Exception:
+        return False
+
+def lock_screen():
+    try:
+        print("[DynamicLock] Locking session...")
+        subprocess.run(['loginctl', 'lock-session'], check=False)
+    except Exception as e:
+        print(f"[DynamicLock] Error locking: {e}")
+
+def notify_user(title, message):
+    try:
+        subprocess.run(['notify-send', '-a', 'Verrouillage Dynamique', '-i', 'system-lock-screen', title, message], check=False)
+    except Exception:
+        pass
+
+def get_metrics(mac):
+    lq = None
+    rssi = None
+    connected = False
+
+    try:
+        out = subprocess.check_output(['bluetoothctl', 'info', mac], stderr=subprocess.DEVNULL).decode()
+        connected = ('Connected: yes' in out)
+    except Exception:
+        connected = False
+
+    if not connected:
+        try:
+            subprocess.run(['bluetoothctl', 'connect', mac], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=1.0)
+            out = subprocess.check_output(['bluetoothctl', 'info', mac], stderr=subprocess.DEVNULL).decode()
+            connected = ('Connected: yes' in out)
+        except Exception:
+            connected = False
+
+    if not connected:
+        return None, None, False
+
+    try:
+        out = subprocess.check_output(['hcitool', 'lq', mac], stderr=subprocess.DEVNULL).decode().strip()
+        if 'Link quality:' in out:
+            lq = int(out.split(':')[1].strip())
+    except Exception:
+        lq = None
+
+    try:
+        out = subprocess.check_output(['hcitool', 'rssi', mac], stderr=subprocess.DEVNULL).decode().strip()
+        if 'RSSI return value:' in out:
+            rssi = int(out.split(':')[1].strip())
+    except Exception:
+        rssi = None
+
+    return lq, rssi, connected
+
+def main():
+    print("[DynamicLock] Daemon started with Smart Cooldown Protection.")
+    away_time_acc = 0.0
+    was_locked = False
+    grace_until = 0.0
+
+    while True:
+        cfg = load_config()
+
+        if not cfg.get("enabled", True):
+            away_time_acc = 0.0
+            time.sleep(2)
+            continue
+
+        screen_locked = is_screen_locked()
+
+        # Detect transition from locked -> unlocked (user typed their password)
+        if was_locked and not screen_locked:
+            was_locked = False
+            away_time_acc = 0.0
+            # Check if phone is currently disconnected
+            mac = cfg.get("device_mac")
+            lq, rssi, connected = get_metrics(mac) if mac else (None, None, False)
+            if not connected:
+                # Phone is offline / bluetooth disabled: activate grace period so user can use PC!
+                grace_sec = cfg.get("unlock_grace_period", 60)
+                grace_until = time.time() + grace_sec
+                print(f"[DynamicLock] Manual unlock with phone offline. Grace period active for {grace_sec}s.")
+                notify_user("Verrouillage Dynamique", f"Téléphone non détecté. Surveillance en pause pendant {grace_sec}s pour vous laisser travailler.")
+
+        if screen_locked:
+            was_locked = True
+            away_time_acc = 0.0
+            time.sleep(2.5)
+            continue
+
+        # If currently in grace period after manual unlock
+        now = time.time()
+        if now < grace_until:
+            # Check if phone came back online during grace period
+            mac = cfg.get("device_mac")
+            if mac:
+                lq, rssi, connected = get_metrics(mac)
+                if connected and lq is not None and lq >= int(cfg.get("lq_threshold", 90)):
+                    # Phone is back: cancel grace period and resume active protection
+                    grace_until = 0.0
+                    print("[DynamicLock] Phone reconnected. Resuming active dynamic lock.")
+            time.sleep(2)
+            continue
+
+        mac = cfg.get("device_mac")
+        if not mac:
+            time.sleep(2)
+            continue
+
+        check_interval = max(0.5, float(cfg.get("check_interval", 1.0)))
+        delay_threshold = max(0.5, float(cfg.get("delay_seconds", 2.0)))
+        lq_threshold = int(cfg.get("lq_threshold", 90))
+        rssi_threshold = int(cfg.get("rssi_threshold", -2))
+
+        lq, rssi, connected = get_metrics(mac)
+
+        is_away = False
+        if not connected:
+            is_away = True
+        elif lq is None or rssi is None:
+            is_away = True
+        elif rssi <= rssi_threshold:
+            is_away = True
+        elif lq < lq_threshold:
+            is_away = True
+
+        if is_away:
+            away_time_acc += check_interval
+            print(f"[DynamicLock] Away detected ({away_time_acc:.1f}s / {delay_threshold:.1f}s)")
+            if away_time_acc >= delay_threshold:
+                lock_screen()
+                was_locked = True
+                away_time_acc = 0.0
+                time.sleep(3)
+                continue
+        else:
+            away_time_acc = 0.0
+
+        time.sleep(check_interval)
+
+if __name__ == '__main__':
+    main()

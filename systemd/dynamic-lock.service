@@ -1,0 +1,14 @@
+[Unit]
+Description=Dynamic Lock (Verrouillage dynamique par Bluetooth)
+After=bluetooth.target graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/home/adil/.local/bin/dynamic-lock
+Restart=on-failure
+RestartSec=3s
+Environment="PATH=/home/adil/.local/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONUNBUFFERED=1"
+
+[Install]
+WantedBy=default.target

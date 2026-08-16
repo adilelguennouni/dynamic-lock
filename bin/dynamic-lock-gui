@@ -1,0 +1,344 @@
+#!/usr/bin/env python3
+"""
+Dynamic Lock GUI Manager for Linux / Pop!_OS.
+Allows selecting Bluetooth devices, customizing distance and timeout sliders,
+and visualizing live signal metrics in real-time.
+Adapts dynamically to the system's Dark / Light theme.
+"""
+
+import sys
+import os
+import json
+import subprocess
+import gi
+gi.require_version('Gtk', '3.0')
+gi.require_version('Gio', '2.0')
+from gi.repository import Gtk, GLib, Gio, Gdk
+
+CONFIG_DIR = os.path.expanduser('~/.config/dynamic-lock')
+CONFIG_PATH = os.path.join(CONFIG_DIR, 'config.json')
+
+DEFAULT_CONFIG = {
+    "enabled": True,
+    "device_mac": "3C:B0:ED:DC:A2:39",
+    "device_name": "Nothing Phone (3)",
+    "lq_threshold": 90,
+    "rssi_threshold": -2,
+    "delay_seconds": 2.0,
+    "check_interval": 1.0,
+    "unlock_grace_period": 60
+}
+
+class DynamicLockApp(Gtk.Window):
+    def __init__(self):
+        super().__init__(title="Verrouillage Dynamique")
+        self.set_default_size(480, 600)
+        self.set_position(Gtk.WindowPosition.CENTER)
+        self.set_border_width(16)
+
+        # Setup Dynamic System Theme Listener
+        self.init_theme_sync()
+
+        # Load config
+        self.config = self.load_config()
+        self.devices_list = []
+
+        self.setup_ui()
+        self.load_devices()
+        self.apply_config_to_ui()
+
+        # Timer for live signal updates (every 500ms)
+        GLib.timeout_add(500, self.update_live_signal)
+
+    def init_theme_sync(self):
+        try:
+            self.desktop_settings = Gio.Settings.new('org.gnome.desktop.interface')
+            self.desktop_settings.connect('changed::color-scheme', self.on_system_theme_changed)
+            self.desktop_settings.connect('changed::gtk-theme', self.on_system_theme_changed)
+            self.sync_gtk_theme()
+        except Exception:
+            pass
+
+    def on_system_theme_changed(self, settings, key):
+        self.sync_gtk_theme()
+
+    def sync_gtk_theme(self):
+        try:
+            scheme = self.desktop_settings.get_string('color-scheme')
+            gtk_theme = self.desktop_settings.get_string('gtk-theme')
+            is_dark = (scheme == 'prefer-dark' or 'dark' in gtk_theme.lower())
+            gtk_settings = Gtk.Settings.get_default()
+            if gtk_settings:
+                gtk_settings.set_property('gtk-application-prefer-dark-theme', is_dark)
+        except Exception:
+            pass
+
+    def load_config(self):
+        try:
+            if os.path.exists(CONFIG_PATH):
+                with open(CONFIG_PATH, 'r') as f:
+                    return {**DEFAULT_CONFIG, **json.load(f)}
+        except Exception:
+            pass
+        return DEFAULT_CONFIG.copy()
+
+    def save_config(self):
+        os.makedirs(CONFIG_DIR, exist_ok=True)
+        try:
+            with open(CONFIG_PATH, 'w') as f:
+                json.dump(self.config, f, indent=2)
+        except Exception as e:
+            print("Error saving config:", e)
+
+    def setup_ui(self):
+        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        self.add(main_box)
+
+        # HeaderBar
+        header = Gtk.HeaderBar()
+        header.set_title("Verrouillage Dynamique")
+        header.set_subtitle("Protection par proximité Bluetooth")
+        header.set_show_close_button(True)
+        self.set_titlebar(header)
+
+        # Enable Switch in HeaderBar
+        self.switch_enabled = Gtk.Switch()
+        self.switch_enabled.set_valign(Gtk.Align.CENTER)
+        self.switch_enabled.connect("state-set", self.on_switch_toggled)
+        header.pack_end(self.switch_enabled)
+
+        # --- Section 1 : Choix de l'appareil ---
+        card_dev = Gtk.Frame()
+        card_dev.set_shadow_type(Gtk.ShadowType.ETCHED_IN)
+        box_dev = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box_dev.set_border_width(12)
+        card_dev.add(box_dev)
+
+        lbl_dev_title = Gtk.Label(xalign=0)
+        lbl_dev_title.set_markup("<b>📱 Appareil Bluetooth à suivre</b>")
+        box_dev.pack_start(lbl_dev_title, False, False, 0)
+
+        dev_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self.combo_devices = Gtk.ComboBoxText()
+        self.combo_devices.set_hexpand(True)
+        self.combo_devices.connect("changed", self.on_device_changed)
+        dev_row.pack_start(self.combo_devices, True, True, 0)
+
+        btn_refresh = Gtk.Button.new_from_icon_name("view-refresh-symbolic", Gtk.IconSize.BUTTON)
+        btn_refresh.set_tooltip_text("Rafraîchir les appareils Bluetooth")
+        btn_refresh.connect("clicked", lambda b: self.load_devices())
+        dev_row.pack_start(btn_refresh, False, False, 0)
+        box_dev.pack_start(dev_row, False, False, 0)
+
+        main_box.pack_start(card_dev, False, False, 0)
+
+        # --- Section 2 : Moniteur de Signal en Direct ---
+        card_sig = Gtk.Frame()
+        card_sig.set_shadow_type(Gtk.ShadowType.ETCHED_IN)
+        box_sig = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box_sig.set_border_width(12)
+        card_sig.add(box_sig)
+
+        lbl_sig_title = Gtk.Label(xalign=0)
+        lbl_sig_title.set_markup("<b>📡 Signal en temps réel</b>")
+        box_sig.pack_start(lbl_sig_title, False, False, 0)
+
+        self.progress_signal = Gtk.ProgressBar()
+        self.progress_signal.set_show_text(True)
+        self.progress_signal.set_fraction(1.0)
+        self.progress_signal.set_text("100% (À portée)")
+        box_sig.pack_start(self.progress_signal, False, False, 0)
+
+        self.lbl_signal_detail = Gtk.Label(xalign=0)
+        self.lbl_signal_detail.set_markup("<small>Qualité de liaison: 100% | Puissance RSSI: 0 dBm</small>")
+        box_sig.pack_start(self.lbl_signal_detail, False, False, 0)
+
+        self.lbl_status_badge = Gtk.Label(xalign=0)
+        self.lbl_status_badge.set_markup("<span color='#2ecc71'>● Connecté et à proximité immédiate</span>")
+        box_sig.pack_start(self.lbl_status_badge, False, False, 0)
+
+        main_box.pack_start(card_sig, False, False, 0)
+
+        # --- Section 3 : Réglages personnalisables ---
+        card_settings = Gtk.Frame()
+        card_settings.set_shadow_type(Gtk.ShadowType.ETCHED_IN)
+        box_settings = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        box_settings.set_border_width(12)
+        card_settings.add(box_settings)
+
+        lbl_sett_title = Gtk.Label(xalign=0)
+        lbl_sett_title.set_markup("<b>⚙️ Personnalisation de la sensibilité</b>")
+        box_settings.pack_start(lbl_sett_title, False, False, 0)
+
+        # Slider 1: Seuil de proximité / Distance
+        box_lq = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        lq_header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        lbl_lq = Gtk.Label(label="Sensibilité de distance (Seuil) :", xalign=0)
+        self.lbl_lq_val = Gtk.Label(label="90%", xalign=1)
+        lq_header.pack_start(lbl_lq, True, True, 0)
+        lq_header.pack_start(self.lbl_lq_val, False, False, 0)
+        box_lq.pack_start(lq_header, False, False, 0)
+
+        self.scale_lq = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 50, 98, 1)
+        self.scale_lq.set_draw_value(False)
+        self.scale_lq.connect("value-changed", self.on_lq_scale_changed)
+        box_lq.pack_start(self.scale_lq, False, False, 0)
+
+        lbl_lq_desc = Gtk.Label(xalign=0)
+        lbl_lq_desc.set_markup("<small><i>90-95% : Verrouille dès les premiers pas hors du bureau.<br>70-80% : Plus tolérant (permet de bouger dans la pièce).</i></small>")
+        box_lq.pack_start(lbl_lq_desc, False, False, 0)
+        box_settings.pack_start(box_lq, False, False, 0)
+
+        # Slider 2: Délai de réaction avant verrouillage
+        box_delay = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        delay_header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        lbl_delay = Gtk.Label(label="Délai avant verrouillage :", xalign=0)
+        self.lbl_delay_val = Gtk.Label(label="2.0s", xalign=1)
+        delay_header.pack_start(lbl_delay, True, True, 0)
+        delay_header.pack_start(self.lbl_delay_val, False, False, 0)
+        box_delay.pack_start(delay_header, False, False, 0)
+
+        self.scale_delay = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0.5, 8.0, 0.5)
+        self.scale_delay.set_draw_value(False)
+        self.scale_delay.connect("value-changed", self.on_delay_scale_changed)
+        box_delay.pack_start(self.scale_delay, False, False, 0)
+
+        lbl_delay_desc = Gtk.Label(xalign=0)
+        lbl_delay_desc.set_markup("<small><i>Temps continu d'éloignement requis avant verrouillage.</i></small>")
+        box_delay.pack_start(lbl_delay_desc, False, False, 0)
+        box_settings.pack_start(box_delay, False, False, 0)
+
+        main_box.pack_start(card_settings, False, False, 0)
+
+        # --- Section 4 : Boutons de test ---
+        btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        btn_test = Gtk.Button.new_with_label("🔒 Tester le verrouillage immédiat")
+        btn_test.connect("clicked", lambda b: subprocess.run(['loginctl', 'lock-session']))
+        btn_box.pack_start(btn_test, True, True, 0)
+
+        main_box.pack_start(btn_box, False, False, 0)
+
+    def load_devices(self):
+        self.combo_devices.remove_all()
+        self.devices_list = []
+        try:
+            out = subprocess.check_output(['bluetoothctl', 'devices'], stderr=subprocess.DEVNULL).decode().strip()
+            for line in out.splitlines():
+                parts = line.split()
+                if len(parts) >= 3 and parts[0] == 'Device':
+                    mac = parts[1]
+                    name = " ".join(parts[2:])
+                    self.devices_list.append((mac, name))
+                    self.combo_devices.append(mac, f"{name} ({mac})")
+        except Exception:
+            pass
+
+        mac = self.config.get("device_mac")
+        if mac:
+            self.combo_devices.set_active_id(mac)
+        elif self.devices_list:
+            self.combo_devices.set_active(0)
+
+    def apply_config_to_ui(self):
+        self.switch_enabled.set_active(self.config.get("enabled", True))
+        lq = self.config.get("lq_threshold", 90)
+        self.scale_lq.set_value(lq)
+        self.lbl_lq_val.set_text(f"{int(lq)}%")
+
+        delay = self.config.get("delay_seconds", 2.0)
+        self.scale_delay.set_value(delay)
+        self.lbl_delay_val.set_text(f"{delay:.1f}s")
+
+    def on_switch_toggled(self, switch, state):
+        self.config["enabled"] = state
+        self.save_config()
+
+    def on_device_changed(self, combo):
+        active_id = combo.get_active_id()
+        if active_id:
+            self.config["device_mac"] = active_id
+            for mac, name in self.devices_list:
+                if mac == active_id:
+                    self.config["device_name"] = name
+                    break
+            self.save_config()
+
+    def on_lq_scale_changed(self, scale):
+        val = int(scale.get_value())
+        self.lbl_lq_val.set_text(f"{val}%")
+        self.config["lq_threshold"] = val
+        self.save_config()
+
+    def on_delay_scale_changed(self, scale):
+        val = round(scale.get_value(), 1)
+        self.lbl_delay_val.set_text(f"{val:.1f}s")
+        self.config["delay_seconds"] = val
+        self.save_config()
+
+    def update_live_signal(self):
+        mac = self.config.get("device_mac")
+        if not mac:
+            self.progress_signal.set_fraction(0.0)
+            self.progress_signal.set_text("Aucun appareil sélectionné")
+            self.lbl_status_badge.set_markup("<span color='#e74c3c'>● Aucun appareil</span>")
+            return True
+
+        lq = None
+        rssi = None
+        connected = False
+
+        try:
+            out = subprocess.check_output(['bluetoothctl', 'info', mac], stderr=subprocess.DEVNULL).decode()
+            connected = ('Connected: yes' in out)
+        except Exception:
+            connected = False
+
+        if connected:
+            try:
+                out = subprocess.check_output(['hcitool', 'lq', mac], stderr=subprocess.DEVNULL).decode().strip()
+                if 'Link quality:' in out:
+                    lq = int(out.split(':')[1].strip())
+            except Exception:
+                lq = None
+
+            try:
+                out = subprocess.check_output(['hcitool', 'rssi', mac], stderr=subprocess.DEVNULL).decode().strip()
+                if 'RSSI return value:' in out:
+                    rssi = int(out.split(':')[1].strip())
+            except Exception:
+                rssi = None
+
+        thresh = self.config.get("lq_threshold", 90)
+
+        if not connected:
+            self.progress_signal.set_fraction(0.0)
+            self.progress_signal.set_text("Déconnecté (Hors de portée)")
+            self.lbl_signal_detail.set_markup("<small>Qualité de liaison: 0% | Puissance RSSI: Non détecté</small>")
+            self.lbl_status_badge.set_markup("<span color='#e74c3c'>● Signal perdu (Verrouillage prêt)</span>")
+        elif lq is not None:
+            frac = max(0.0, min(1.0, lq / 100.0))
+            self.progress_signal.set_fraction(frac)
+            rssi_str = f"{rssi} dBm" if rssi is not None else "N/A"
+            self.lbl_signal_detail.set_markup(f"<small>Qualité de liaison: {lq}% | Puissance RSSI: {rssi_str}</small>")
+            
+            if lq >= thresh:
+                self.progress_signal.set_text(f"{lq}% (À portée)")
+                self.lbl_status_badge.set_markup("<span color='#2ecc71'>● Connecté et à proximité immédiate</span>")
+            else:
+                self.progress_signal.set_text(f"{lq}% (Sous le seuil de {thresh}%)")
+                self.lbl_status_badge.set_markup("<span color='#f39c12'>● Éloignement détecté</span>")
+        else:
+            self.progress_signal.set_fraction(0.5)
+            self.progress_signal.set_text("Recherche en cours...")
+            self.lbl_status_badge.set_markup("<span color='#3498db'>● En attente de signal...</span>")
+
+        return True
+
+def main():
+    app = DynamicLockApp()
+    app.connect("destroy", Gtk.main_quit)
+    app.show_all()
+    Gtk.main()
+
+if __name__ == '__main__':
+    main()
