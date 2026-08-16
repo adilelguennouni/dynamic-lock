@@ -6,6 +6,7 @@ echo "=== Installation de Dynamic Lock pour Linux ==="
 # Directories
 mkdir -p ~/.local/bin
 mkdir -p ~/.local/share/applications
+mkdir -p ~/.local/share/icons/hicolor/scalable/apps
 mkdir -p ~/.config/systemd/user
 mkdir -p ~/.config/dynamic-lock
 
@@ -13,6 +14,9 @@ mkdir -p ~/.config/dynamic-lock
 cp bin/dynamic-lock ~/.local/bin/
 cp bin/dynamic-lock-gui ~/.local/bin/
 chmod +x ~/.local/bin/dynamic-lock ~/.local/bin/dynamic-lock-gui
+
+# Install icon
+cp desktop/dynamic-lock.svg ~/.local/share/icons/hicolor/scalable/apps/
 
 # Install desktop launcher
 cp desktop/dynamic-lock.desktop ~/.local/share/applications/

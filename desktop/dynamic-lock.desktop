@@ -2,7 +2,7 @@
 Name=Verrouillage Dynamique
 Comment=Gérer le verrouillage automatique par proximité Bluetooth
 Exec=/home/adil/.local/bin/dynamic-lock-gui
-Icon=system-lock-screen
+Icon=dynamic-lock
 Terminal=false
 Type=Application
 Categories=Settings;Utility;HardwareSettings;
