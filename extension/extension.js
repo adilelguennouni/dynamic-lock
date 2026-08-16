@@ -1,7 +1,8 @@
 /*
  * Dynamic Lock Indicator - GNOME Shell Extension
  * Native Pop!_OS / GNOME Top Bar Menu for Bluetooth Proximity Lock
- * With Device Switcher, Telemetry, Battery, and Quick Proximity Presets.
+ * Bilingual Support (English by default, Français), Device Switcher,
+ * Real-time Signal Telemetry, Battery and Quick Proximity Presets.
  */
 
 const { GObject, St, Clutter, GLib, Gio } = imports.gi;
@@ -11,11 +12,44 @@ const PopupMenu = imports.ui.popupMenu;
 
 const CONFIG_PATH = GLib.build_filenamev([GLib.get_home_dir(), '.config', 'dynamic-lock', 'config.json']);
 
-const PRESETS = {
-    'strict': { name: '🎯 Bureau Strict (0-1m)', lq: 95, rssi: -2, delay: 1.0 },
-    'comfort': { name: '🛋️ Pièce / Confort (2-3m)', lq: 80, rssi: -6, delay: 2.5 },
-    'exit': { name: '🚪 Sortie de Pièce (+4m)', lq: 60, rssi: -12, delay: 4.0 },
-    'custom': { name: '🎛️ Personnalisé', lq: null, rssi: null, delay: null }
+const I18N = {
+    "en": {
+        "switch_device": "📱 Switch Device",
+        "proximity_zone": "📶 Sensitivity Zone",
+        "lock_active": "Dynamic Lock Active",
+        "lock_now": "🔒 Lock Session Now",
+        "open_settings": "⚙️ Full Preferences...",
+        "signal_out_of_range": "📡 Out of range",
+        "signal_connected": "📡 Connected",
+        "presets": {
+            "strict": "🎯 Desk (0-1m)",
+            "comfort": "🛋️ Room (2-3m)",
+            "exit": "🚪 Exit (+4m)",
+            "custom": "🎛️ Custom"
+        }
+    },
+    "fr": {
+        "switch_device": "📱 Changer d'appareil",
+        "proximity_zone": "📶 Bande de sensibilité",
+        "lock_active": "Verrouillage actif",
+        "lock_now": "🔒 Verrouiller la session maintenant",
+        "open_settings": "⚙️ Réglages complets...",
+        "signal_out_of_range": "📡 Hors de portée",
+        "signal_connected": "📡 Connecté",
+        "presets": {
+            "strict": "🎯 Bureau Strict (0-1m)",
+            "comfort": "🛋️ Pièce / Confort (2-3m)",
+            "exit": "🚪 Sortie de Pièce (+4m)",
+            "custom": "🎛️ Personnalisé"
+        }
+    }
+};
+
+const PRESET_VALUES = {
+    'strict': { lq: 95, rssi: -2, delay: 1.0 },
+    'comfort': { lq: 80, rssi: -6, delay: 2.5 },
+    'exit': { lq: 60, rssi: -12, delay: 4.0 },
+    'custom': { lq: null, rssi: null, delay: null }
 };
 
 const DynamicLockMenu = GObject.registerClass(
@@ -42,6 +76,11 @@ class DynamicLockMenu extends PanelMenu.Button {
         this._updateTelemetry();
     }
 
+    _getT() {
+        let lang = this._config.language || "en";
+        return I18N[lang] || I18N["en"];
+    }
+
     _loadConfig() {
         try {
             if (GLib.file_test(CONFIG_PATH, GLib.FileTest.EXISTS)) {
@@ -55,9 +94,10 @@ class DynamicLockMenu extends PanelMenu.Button {
         }
         return {
             enabled: true,
+            language: "en",
             preset: 'strict',
-            device_mac: '3C:B0:ED:DC:A2:39',
-            device_name: 'Nothing Phone (3)',
+            device_mac: '',
+            device_name: '',
             lq_threshold: 95,
             delay_seconds: 1.0
         };
@@ -95,22 +135,23 @@ class DynamicLockMenu extends PanelMenu.Button {
 
     _buildMenu() {
         this.menu.removeAll();
+        let t = this._getT();
 
         // 1. Device Info Header
         this._deviceHeaderItem = new PopupMenu.PopupMenuItem(
-            this._config.device_name || 'Appareil Bluetooth',
+            this._config.device_name || 'Bluetooth Device',
             { reactive: false, style_class: 'popup-subtitle-menu-item' }
         );
         this.menu.addMenuItem(this._deviceHeaderItem);
 
         // 2. Telemetry & Battery row
-        this._telemetryItem = new PopupMenu.PopupMenuItem('📡 Signal: -- | 🔋 Batterie: --', { reactive: false });
+        this._telemetryItem = new PopupMenu.PopupMenuItem('📡 Signal: -- | 🔋 Battery: --', { reactive: false });
         this.menu.addMenuItem(this._telemetryItem);
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
         // 3. Switch ON / OFF
-        this._switchItem = new PopupMenu.PopupSwitchMenuItem('Verrouillage actif', this._config.enabled !== false);
+        this._switchItem = new PopupMenu.PopupSwitchMenuItem(t.lock_active, this._config.enabled !== false);
         this._switchItem.connect('toggled', (item, state) => {
             this._config.enabled = state;
             this._saveConfig();
@@ -120,19 +161,19 @@ class DynamicLockMenu extends PanelMenu.Button {
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
-        // 4. Submenu : Changer d'appareil Bluetooth
-        this._devicesSubMenu = new PopupMenu.PopupSubMenuMenuItem('📱 Changer d\'appareil');
+        // 4. Submenu : Switch Device
+        this._devicesSubMenu = new PopupMenu.PopupSubMenuMenuItem(t.switch_device);
         this._populateDevicesSubmenu();
         this.menu.addMenuItem(this._devicesSubMenu);
 
         // 5. Submenu : Proximity Presets
-        this._presetSubMenu = new PopupMenu.PopupSubMenuMenuItem('📶 Bande de sensibilité');
+        this._presetSubMenu = new PopupMenu.PopupSubMenuMenuItem(t.proximity_zone);
         let currentPreset = this._config.preset || 'strict';
 
         this._presetItems = {};
-        for (let key in PRESETS) {
-            let pinfo = PRESETS[key];
-            let item = new PopupMenu.PopupMenuItem(pinfo.name);
+        for (let key in PRESET_VALUES) {
+            let label = t.presets[key] || key;
+            let item = new PopupMenu.PopupMenuItem(label);
             if (key === currentPreset) {
                 item.setOrnament(PopupMenu.Ornament.DOT);
             }
@@ -147,7 +188,7 @@ class DynamicLockMenu extends PanelMenu.Button {
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
         // 6. Actions: Open GUI & Lock Now
-        let lockItem = new PopupMenu.PopupMenuItem('🔒 Verrouiller la session maintenant');
+        let lockItem = new PopupMenu.PopupMenuItem(t.lock_now);
         lockItem.connect('activate', () => {
             try {
                 GLib.spawn_command_line_async('loginctl lock-session');
@@ -155,7 +196,7 @@ class DynamicLockMenu extends PanelMenu.Button {
         });
         this.menu.addMenuItem(lockItem);
 
-        let settingsItem = new PopupMenu.PopupMenuItem('⚙️ Réglages complets...');
+        let settingsItem = new PopupMenu.PopupMenuItem(t.open_settings);
         settingsItem.connect('activate', () => {
             try {
                 GLib.spawn_command_line_async('dynamic-lock-gui');
@@ -187,8 +228,8 @@ class DynamicLockMenu extends PanelMenu.Button {
 
     _selectPreset(presetKey) {
         this._config.preset = presetKey;
-        if (presetKey !== 'custom' && PRESETS[presetKey]) {
-            let p = PRESETS[presetKey];
+        if (presetKey !== 'custom' && PRESET_VALUES[presetKey]) {
+            let p = PRESET_VALUES[presetKey];
             this._config.lq_threshold = p.lq;
             this._config.rssi_threshold = p.rssi;
             this._config.delay_seconds = p.delay;
@@ -202,11 +243,12 @@ class DynamicLockMenu extends PanelMenu.Button {
 
     _updateTelemetry() {
         this._config = this._loadConfig();
+        let t = this._getT();
 
         let mac = this._config.device_mac;
         if (!mac) return;
 
-        let devName = this._config.device_name || 'Appareil Bluetooth';
+        let devName = this._config.device_name || 'Bluetooth Device';
         this._deviceHeaderItem.label.text = `📱 ${devName}`;
 
         // Get signal metrics
@@ -258,12 +300,12 @@ class DynamicLockMenu extends PanelMenu.Button {
         } catch (e) {}
 
         if (!connected) {
-            this._telemetryItem.label.text = `📡 Hors de portée | 🔋 ${batteryStr}`;
+            this._telemetryItem.label.text = `${t.signal_out_of_range} | 🔋 ${batteryStr}`;
         } else if (lq !== null) {
             let rssiStr = rssi !== null ? `${rssi} dBm` : '';
             this._telemetryItem.label.text = `📡 ${lq}% (${rssiStr}) | 🔋 ${batteryStr}`;
         } else {
-            this._telemetryItem.label.text = `📡 Connecté | 🔋 ${batteryStr}`;
+            this._telemetryItem.label.text = `${t.signal_connected} | 🔋 ${batteryStr}`;
         }
 
         this._updateIconState(connected);

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Dynamic Lock - Sleek & Minimalist GUI Manager for Linux (Pop!_OS / GNOME).
-Includes Settings Dialog (Theme selector, notifications, cooldown, battery alerts),
+Multi-language support (English by default, Français), Theme selector,
 Proximity Zones, real-time Bluetooth telemetry, and live signal monitoring.
 """
 
@@ -17,35 +17,92 @@ from gi.repository import Gtk, GLib, Gio, Gdk
 CONFIG_DIR = os.path.expanduser('~/.config/dynamic-lock')
 CONFIG_PATH = os.path.join(CONFIG_DIR, 'config.json')
 
-PRESETS = {
-    "strict": {
-        "title": "🎯 Bureau",
-        "subtitle": "0 - 1m (Instantané)",
-        "lq": 95,
-        "rssi": -2,
-        "delay": 1.0,
-        "desc": "Verrouille dès les premiers pas hors du bureau."
+TRANSLATIONS = {
+    "en": {
+        "app_title": "Dynamic Lock",
+        "app_subtitle": "Bluetooth Proximity Protection",
+        "preferences": "Preferences",
+        "theme_title": "Theme Appearance",
+        "theme_auto": "🌓 Auto",
+        "theme_dark": "🌙 Dark",
+        "theme_light": "☀️ Light",
+        "lang_title": "Language / Langue",
+        "lang_en": "🇬🇧 English",
+        "lang_fr": "🇫🇷 Français",
+        "device_title": "Monitored Device",
+        "battery_pill": "🔋",
+        "detection_zone": "Detection Zone",
+        "preset_strict_title": "🎯 Desk\n<small>0 - 1m</small>",
+        "preset_comfort_title": "🛋️ Room\n<small>2 - 3m</small>",
+        "preset_exit_title": "🚪 Exit\n<small>+4m</small>",
+        "preset_strict_desc": "Instant lock upon taking first steps away from desk.",
+        "preset_comfort_desc": "Allows moving around the desk without locking.",
+        "preset_exit_desc": "Only locks when leaving the room or behind walls.",
+        "manual_adjustments": "Precise Manual Adjustments",
+        "req_sensitivity": "Required Sensitivity :",
+        "lock_delay": "Lock Delay :",
+        "test_lock": "🔒 Test Lock Session",
+        "status_close": "● In close proximity",
+        "status_away": "● Moving away detected",
+        "status_lost": "● Signal lost (Lock ready)",
+        "status_none": "● No device selected",
+        "status_searching": "● Searching for signal...",
+        "notif_title": "Notifications & Alerts",
+        "notif_unlock": "Notification on manual unlock",
+        "notif_battery": "Low battery alert (< 20%)",
+        "grace_title": "Smart Cooldown (Anti-Lockout)",
+        "grace_desc": "Grace period if device is offline :",
+        "refresh_tooltip": "Refresh Bluetooth devices",
+        "settings_tooltip": "Preferences & Theme"
     },
-    "comfort": {
-        "title": "🛋️ Pièce",
-        "subtitle": "2 - 3m (Confort)",
-        "lq": 80,
-        "rssi": -6,
-        "delay": 2.5,
-        "desc": "Permet de bouger autour du bureau sans couper la session."
-    },
-    "exit": {
-        "title": "🚪 Sortie",
-        "subtitle": "+4m (Large)",
-        "lq": 60,
-        "rssi": -12,
-        "delay": 4.0,
-        "desc": "Ne verrouille qu'en quittant la pièce ou derrière un mur."
+    "fr": {
+        "app_title": "Verrouillage Dynamique",
+        "app_subtitle": "Protection par proximité Bluetooth",
+        "preferences": "Préférences",
+        "theme_title": "Apparence du Thème",
+        "theme_auto": "🌓 Auto",
+        "theme_dark": "🌙 Sombre",
+        "theme_light": "☀️ Clair",
+        "lang_title": "Langue / Language",
+        "lang_en": "🇬🇧 English",
+        "lang_fr": "🇫🇷 Français",
+        "device_title": "Appareil surveillé",
+        "battery_pill": "🔋",
+        "detection_zone": "Zone de détection",
+        "preset_strict_title": "🎯 Bureau\n<small>0 - 1m</small>",
+        "preset_comfort_title": "🛋️ Pièce\n<small>2 - 3m</small>",
+        "preset_exit_title": "🚪 Sortie\n<small>+4m</small>",
+        "preset_strict_desc": "Verrouillage instantané dès les premiers pas hors du bureau.",
+        "preset_comfort_desc": "Permet de bouger autour du bureau sans couper la session.",
+        "preset_exit_desc": "Ne verrouille qu'en quittant la pièce ou derrière un mur.",
+        "manual_adjustments": "Ajustements manuels précis",
+        "req_sensitivity": "Sensibilité requise :",
+        "lock_delay": "Délai avant verrouillage :",
+        "test_lock": "🔒 Tester le verrouillage immédiat",
+        "status_close": "● À proximité immédiate",
+        "status_away": "● Éloignement détecté",
+        "status_lost": "● Signal perdu (Verrouillage prêt)",
+        "status_none": "● Aucun appareil",
+        "status_searching": "● Recherche du signal...",
+        "notif_title": "Notifications & Alertes",
+        "notif_unlock": "Notification lors du déverrouillage",
+        "notif_battery": "Alerte batterie faible (< 20%)",
+        "grace_title": "Pause après mot de passe (Anti-Boucle)",
+        "grace_desc": "Délai de grâce si téléphone éteint :",
+        "refresh_tooltip": "Rafraîchir les périphériques",
+        "settings_tooltip": "Préférences et Thème"
     }
+}
+
+PRESETS = {
+    "strict": {"lq": 95, "rssi": -2, "delay": 1.0},
+    "comfort": {"lq": 80, "rssi": -6, "delay": 2.5},
+    "exit": {"lq": 60, "rssi": -12, "delay": 4.0}
 }
 
 DEFAULT_CONFIG = {
     "enabled": True,
+    "language": "en",       # "en" by default, "fr" supported
     "theme_mode": "system",  # "system", "dark", "light"
     "preset": "strict",
     "device_mac": "3C:B0:ED:DC:A2:39",
@@ -111,21 +168,57 @@ STYLE_CSS = """
 
 class SettingsDialog(Gtk.Dialog):
     def __init__(self, parent, config, on_config_changed_cb):
-        super().__init__(title="Préférences", transient_for=parent, flags=0)
-        self.set_default_size(380, 440)
-        self.set_border_width(12)
         self.config = config
+        lang = self.config.get("language", "en")
+        self.t = TRANSLATIONS.get(lang, TRANSLATIONS["en"])
+        
+        super().__init__(title=self.t["preferences"], transient_for=parent, flags=0)
+        self.set_default_size(380, 500)
+        self.set_border_width(14)
         self.on_config_changed = on_config_changed_cb
 
         box = self.get_content_area()
         box.set_spacing(14)
 
-        # 1. Section Thème
+        # 1. Language Section
+        card_lang = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        card_lang.get_style_context().add_class("card-box")
+
+        lbl_lg = Gtk.Label(xalign=0)
+        lbl_lg.set_markup(f"<b>🌐 {self.t['lang_title']}</b>")
+        card_lang.pack_start(lbl_lg, False, False, 0)
+
+        grid_lg = Gtk.Grid()
+        grid_lg.set_column_homogeneous(True)
+        grid_lg.set_column_spacing(6)
+
+        cur_lang = self.config.get("language", "en")
+        self.btn_lang_en = Gtk.RadioButton.new_with_label_from_widget(None, self.t["lang_en"])
+        self.btn_lang_en.set_mode(False)
+        self.btn_lang_en.get_style_context().add_class("preset-btn")
+        self.btn_lang_en.connect("toggled", lambda b: self.set_lang("en") if b.get_active() else None)
+        grid_lg.attach(self.btn_lang_en, 0, 0, 1, 1)
+
+        self.btn_lang_fr = Gtk.RadioButton.new_with_label_from_widget(self.btn_lang_en, self.t["lang_fr"])
+        self.btn_lang_fr.set_mode(False)
+        self.btn_lang_fr.get_style_context().add_class("preset-btn")
+        self.btn_lang_fr.connect("toggled", lambda b: self.set_lang("fr") if b.get_active() else None)
+        grid_lg.attach(self.btn_lang_fr, 1, 0, 1, 1)
+
+        if cur_lang == "fr":
+            self.btn_lang_fr.set_active(True)
+        else:
+            self.btn_lang_en.set_active(True)
+
+        card_lang.pack_start(grid_lg, False, False, 0)
+        box.pack_start(card_lang, False, False, 0)
+
+        # 2. Theme Section
         card_theme = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         card_theme.get_style_context().add_class("card-box")
         
         lbl_th = Gtk.Label(xalign=0)
-        lbl_th.set_markup("<b>🌓 Apparence du Thème</b>")
+        lbl_th.set_markup(f"<b>🌓 {self.t['theme_title']}</b>")
         card_theme.pack_start(lbl_th, False, False, 0)
 
         grid_th = Gtk.Grid()
@@ -134,19 +227,19 @@ class SettingsDialog(Gtk.Dialog):
 
         cur_th = self.config.get("theme_mode", "system")
 
-        self.btn_th_sys = Gtk.RadioButton.new_with_label_from_widget(None, "🌓 Auto")
+        self.btn_th_sys = Gtk.RadioButton.new_with_label_from_widget(None, self.t["theme_auto"])
         self.btn_th_sys.set_mode(False)
         self.btn_th_sys.get_style_context().add_class("preset-btn")
         self.btn_th_sys.connect("toggled", lambda b: self.set_theme("system") if b.get_active() else None)
         grid_th.attach(self.btn_th_sys, 0, 0, 1, 1)
 
-        self.btn_th_dark = Gtk.RadioButton.new_with_label_from_widget(self.btn_th_sys, "🌙 Sombre")
+        self.btn_th_dark = Gtk.RadioButton.new_with_label_from_widget(self.btn_th_sys, self.t["theme_dark"])
         self.btn_th_dark.set_mode(False)
         self.btn_th_dark.get_style_context().add_class("preset-btn")
         self.btn_th_dark.connect("toggled", lambda b: self.set_theme("dark") if b.get_active() else None)
         grid_th.attach(self.btn_th_dark, 1, 0, 1, 1)
 
-        self.btn_th_light = Gtk.RadioButton.new_with_label_from_widget(self.btn_th_sys, "☀️ Clair")
+        self.btn_th_light = Gtk.RadioButton.new_with_label_from_widget(self.btn_th_sys, self.t["theme_light"])
         self.btn_th_light.set_mode(False)
         self.btn_th_light.get_style_context().add_class("preset-btn")
         self.btn_th_light.connect("toggled", lambda b: self.set_theme("light") if b.get_active() else None)
@@ -162,17 +255,16 @@ class SettingsDialog(Gtk.Dialog):
         card_theme.pack_start(grid_th, False, False, 0)
         box.pack_start(card_theme, False, False, 0)
 
-        # 2. Section Notifications & Alertes
+        # 3. Notifications & Alerts
         card_notif = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         card_notif.get_style_context().add_class("card-box")
 
         lbl_nt = Gtk.Label(xalign=0)
-        lbl_nt.set_markup("<b>🔔 Notifications & Alertes</b>")
+        lbl_nt.set_markup(f"<b>🔔 {self.t['notif_title']}</b>")
         card_notif.pack_start(lbl_nt, False, False, 0)
 
-        # Switch notifications de pause / verrouillage
         row_n1 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        lbl_n1 = Gtk.Label(label="Notifications lors du déverrouillage", xalign=0)
+        lbl_n1 = Gtk.Label(label=self.t["notif_unlock"], xalign=0)
         sw_n1 = Gtk.Switch()
         sw_n1.set_active(self.config.get("notify_on_grace", True))
         sw_n1.connect("state-set", lambda sw, st: self.set_opt("notify_on_grace", st))
@@ -180,9 +272,8 @@ class SettingsDialog(Gtk.Dialog):
         row_n1.pack_start(sw_n1, False, False, 0)
         card_notif.pack_start(row_n1, False, False, 0)
 
-        # Switch alerte batterie
         row_n2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        lbl_n2 = Gtk.Label(label="Alerte batterie faible (< 20%)", xalign=0)
+        lbl_n2 = Gtk.Label(label=self.t["notif_battery"], xalign=0)
         sw_n2 = Gtk.Switch()
         sw_n2.set_active(self.config.get("battery_warning", True))
         sw_n2.connect("state-set", lambda sw, st: self.set_opt("battery_warning", st))
@@ -192,16 +283,16 @@ class SettingsDialog(Gtk.Dialog):
 
         box.pack_start(card_notif, False, False, 0)
 
-        # 3. Section Délai de Grâce (Anti-Boucle)
+        # 4. Grace Period (Anti-Lockout)
         card_grace = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         card_grace.get_style_context().add_class("card-box")
 
         lbl_gr = Gtk.Label(xalign=0)
-        lbl_gr.set_markup("<b>⏱️ Pause après mot de passe (Anti-Boucle)</b>")
+        lbl_gr.set_markup(f"<b>⏱️ {self.t['grace_title']}</b>")
         card_grace.pack_start(lbl_gr, False, False, 0)
 
         row_gr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        lbl_gr_desc = Gtk.Label(label="Délai de grâce si téléphone éteint :", xalign=0)
+        lbl_gr_desc = Gtk.Label(label=self.t["grace_desc"], xalign=0)
         self.lbl_gr_val = Gtk.Label(label=f"{int(self.config.get('unlock_grace_period', 60))}s", xalign=1)
         self.lbl_gr_val.get_style_context().add_class("pill-badge")
         row_gr.pack_start(lbl_gr_desc, True, True, 0)
@@ -218,25 +309,29 @@ class SettingsDialog(Gtk.Dialog):
 
         self.show_all()
 
+    def set_lang(self, lang):
+        self.config["language"] = lang
+        self.on_config_changed(rebuild_ui=True)
+
     def set_theme(self, mode):
         self.config["theme_mode"] = mode
-        self.on_config_changed()
+        self.on_config_changed(rebuild_ui=False)
 
     def set_opt(self, key, val):
         self.config[key] = val
-        self.on_config_changed()
+        self.on_config_changed(rebuild_ui=False)
 
     def on_grace_scale_changed(self, scale):
         val = int(scale.get_value())
         self.lbl_gr_val.set_text(f"{val}s")
         self.config["unlock_grace_period"] = val
-        self.on_config_changed()
+        self.on_config_changed(rebuild_ui=False)
 
 
 class DynamicLockApp(Gtk.Window):
     def __init__(self):
-        super().__init__(title="Verrouillage Dynamique")
-        self.set_default_size(440, 580)
+        super().__init__()
+        self.set_default_size(440, 590)
         self.set_position(Gtk.WindowPosition.CENTER)
         self.set_border_width(18)
 
@@ -245,6 +340,9 @@ class DynamicLockApp(Gtk.Window):
         # Load config first
         self.config = self.load_config()
         self.devices_list = []
+        self.t = self.get_strings()
+
+        self.set_title(self.t["app_title"])
 
         self.init_css()
         self.init_theme_sync()
@@ -255,6 +353,10 @@ class DynamicLockApp(Gtk.Window):
 
         # Live signal loop (every 500ms)
         GLib.timeout_add(500, self.update_live_signal)
+
+    def get_strings(self):
+        lang = self.config.get("language", "en")
+        return TRANSLATIONS.get(lang, TRANSLATIONS["en"])
 
     def init_css(self):
         css_provider = Gtk.CssProvider()
@@ -314,18 +416,25 @@ class DynamicLockApp(Gtk.Window):
             print("Error saving config:", e)
 
     def setup_ui(self):
+        # Remove previous children if rebuilding
+        for child in self.get_children():
+            self.remove(child)
+
+        self.t = self.get_strings()
+        self.set_title(self.t["app_title"])
+
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
         self.add(main_box)
 
         # HeaderBar
         header = Gtk.HeaderBar()
-        header.set_title("Verrouillage Dynamique")
+        header.set_title(self.t["app_title"])
         header.set_show_close_button(True)
         self.set_titlebar(header)
 
         # Settings Gear Button
         btn_settings = Gtk.Button.new_from_icon_name("emblem-system-symbolic", Gtk.IconSize.BUTTON)
-        btn_settings.set_tooltip_text("Préférences et Thèmes")
+        btn_settings.set_tooltip_text(self.t["settings_tooltip"])
         btn_settings.connect("clicked", self.open_settings_dialog)
         header.pack_start(btn_settings)
 
@@ -360,7 +469,7 @@ class DynamicLockApp(Gtk.Window):
         # Status text row
         row_status = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         self.lbl_status = Gtk.Label(xalign=0)
-        self.lbl_status.set_markup("<span color='#2ecc71'>● <b>À proximité immédiate</b></span>")
+        self.lbl_status.set_markup(f"<span color='#2ecc71'>● <b>{self.t['status_close']}</b></span>")
         row_status.pack_start(self.lbl_status, True, True, 0)
 
         self.lbl_signal_val = Gtk.Label(label="100% • 0 dBm", xalign=1)
@@ -370,32 +479,32 @@ class DynamicLockApp(Gtk.Window):
 
         main_box.pack_start(card_hero, False, False, 0)
 
-        # --- Card 2 : Presets (Bandes de Distance) ---
+        # --- Card 2 : Presets (Zones de Distance) ---
         box_presets_wrapper = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         
         lbl_presets_title = Gtk.Label(xalign=0)
-        lbl_presets_title.set_markup("<b>Zone de détection</b>")
+        lbl_presets_title.set_markup(f"<b>{self.t['detection_zone']}</b>")
         box_presets_wrapper.pack_start(lbl_presets_title, False, False, 0)
 
         grid_presets = Gtk.Grid()
         grid_presets.set_column_homogeneous(True)
         grid_presets.set_column_spacing(8)
 
-        self.btn_strict = Gtk.RadioButton.new_with_label_from_widget(None, "🎯 Bureau\n<small>0 - 1m</small>")
+        self.btn_strict = Gtk.RadioButton.new_with_label_from_widget(None, self.t["preset_strict_title"])
         self.btn_strict.get_child().set_use_markup(True)
         self.btn_strict.set_mode(False)
         self.btn_strict.get_style_context().add_class("preset-btn")
         self.btn_strict.connect("toggled", lambda b: self.on_preset_btn_toggled("strict") if b.get_active() else None)
         grid_presets.attach(self.btn_strict, 0, 0, 1, 1)
 
-        self.btn_comfort = Gtk.RadioButton.new_with_label_from_widget(self.btn_strict, "🛋️ Pièce\n<small>2 - 3m</small>")
+        self.btn_comfort = Gtk.RadioButton.new_with_label_from_widget(self.btn_strict, self.t["preset_comfort_title"])
         self.btn_comfort.get_child().set_use_markup(True)
         self.btn_comfort.set_mode(False)
         self.btn_comfort.get_style_context().add_class("preset-btn")
         self.btn_comfort.connect("toggled", lambda b: self.on_preset_btn_toggled("comfort") if b.get_active() else None)
         grid_presets.attach(self.btn_comfort, 1, 0, 1, 1)
 
-        self.btn_exit = Gtk.RadioButton.new_with_label_from_widget(self.btn_strict, "🚪 Sortie\n<small>+4m</small>")
+        self.btn_exit = Gtk.RadioButton.new_with_label_from_widget(self.btn_strict, self.t["preset_exit_title"])
         self.btn_exit.get_child().set_use_markup(True)
         self.btn_exit.set_mode(False)
         self.btn_exit.get_style_context().add_class("preset-btn")
@@ -405,13 +514,13 @@ class DynamicLockApp(Gtk.Window):
         box_presets_wrapper.pack_start(grid_presets, False, False, 0)
 
         self.lbl_preset_desc = Gtk.Label(xalign=0)
-        self.lbl_preset_desc.set_markup("<small class='dim-label'>Verrouille dès les premiers pas hors du bureau.</small>")
+        self.lbl_preset_desc.set_markup(f"<small class='dim-label'>{self.t['preset_strict_desc']}</small>")
         box_presets_wrapper.pack_start(self.lbl_preset_desc, False, False, 0)
 
         main_box.pack_start(box_presets_wrapper, False, False, 0)
 
-        # --- Expander : Réglages Précis (Curseurs repliables) ---
-        expander = Gtk.Expander(label="Ajustements manuels précis")
+        # --- Expander : Manual Sliders ---
+        expander = Gtk.Expander(label=self.t["manual_adjustments"])
         box_sliders = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         box_sliders.set_margin_top(8)
         box_sliders.set_margin_bottom(8)
@@ -419,7 +528,7 @@ class DynamicLockApp(Gtk.Window):
 
         # Slider Seuil
         row_lq = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        lbl_lq = Gtk.Label(label="Sensibilité requise :", xalign=0)
+        lbl_lq = Gtk.Label(label=self.t["req_sensitivity"], xalign=0)
         self.lbl_lq_val = Gtk.Label(label="95%", xalign=1)
         self.lbl_lq_val.get_style_context().add_class("pill-badge")
         row_lq.pack_start(lbl_lq, True, True, 0)
@@ -433,7 +542,7 @@ class DynamicLockApp(Gtk.Window):
 
         # Slider Délai
         row_delay = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        lbl_delay = Gtk.Label(label="Délai avant verrouillage :", xalign=0)
+        lbl_delay = Gtk.Label(label=self.t["lock_delay"], xalign=0)
         self.lbl_delay_val = Gtk.Label(label="1.0s", xalign=1)
         self.lbl_delay_val.get_style_context().add_class("pill-badge")
         row_delay.pack_start(lbl_delay, True, True, 0)
@@ -453,19 +562,25 @@ class DynamicLockApp(Gtk.Window):
         main_box.pack_start(spacer, True, True, 0)
 
         # --- Footer Actions ---
-        btn_test = Gtk.Button.new_with_label("🔒 Tester le verrouillage immédiat")
+        btn_test = Gtk.Button.new_with_label(self.t["test_lock"])
         btn_test.get_style_context().add_class("action-btn")
         btn_test.connect("clicked", lambda b: subprocess.run(['loginctl', 'lock-session']))
         main_box.pack_start(btn_test, False, False, 0)
+
+        self.show_all()
 
     def open_settings_dialog(self, btn):
         dlg = SettingsDialog(self, self.config, self.on_settings_updated)
         dlg.run()
         dlg.destroy()
 
-    def on_settings_updated(self):
+    def on_settings_updated(self, rebuild_ui=False):
         self.save_config()
         self.sync_gtk_theme()
+        if rebuild_ui:
+            self.setup_ui()
+            self.load_devices()
+            self.apply_config_to_ui()
 
     def load_devices(self):
         self.combo_devices.remove_all()
@@ -501,7 +616,8 @@ class DynamicLockApp(Gtk.Window):
             self.btn_exit.set_active(True)
 
         if preset_key in PRESETS:
-            self.lbl_preset_desc.set_markup(f"<small class='dim-label'>{PRESETS[preset_key]['desc']}</small>")
+            desc_key = f"preset_{preset_key}_desc"
+            self.lbl_preset_desc.set_markup(f"<small class='dim-label'>{self.t.get(desc_key, '')}</small>")
 
         lq = self.config.get("lq_threshold", 95)
         self.scale_lq.set_value(lq)
@@ -530,10 +646,11 @@ class DynamicLockApp(Gtk.Window):
         if preset_key not in PRESETS:
             return
 
-        pinfo = PRESETS[preset_key]
-        self.lbl_preset_desc.set_markup(f"<small class='dim-label'>{pinfo['desc']}</small>")
+        desc_key = f"preset_{preset_key}_desc"
+        self.lbl_preset_desc.set_markup(f"<small class='dim-label'>{self.t.get(desc_key, '')}</small>")
         self.config["preset"] = preset_key
         
+        pinfo = PRESETS[preset_key]
         self.updating_ui_from_preset = True
         self.config["lq_threshold"] = pinfo["lq"]
         self.config["rssi_threshold"] = pinfo["rssi"]
@@ -568,7 +685,7 @@ class DynamicLockApp(Gtk.Window):
         mac = self.config.get("device_mac")
         if not mac:
             self.progress_signal.set_fraction(0.0)
-            self.lbl_status.set_markup("<span color='#e74c3c'>● Aucun appareil</span>")
+            self.lbl_status.set_markup(f"<span color='#e74c3c'>● {self.t['status_none']}</span>")
             self.lbl_signal_val.set_text("N/A")
             return True
 
@@ -612,8 +729,8 @@ class DynamicLockApp(Gtk.Window):
 
         if not connected:
             self.progress_signal.set_fraction(0.0)
-            self.lbl_status.set_markup("<span color='#e74c3c'>● <b>Signal perdu</b></span>")
-            self.lbl_signal_val.set_text("Déconnecté")
+            self.lbl_status.set_markup(f"<span color='#e74c3c'>● <b>{self.t['status_lost']}</b></span>")
+            self.lbl_signal_val.set_text("Offline")
         elif lq is not None:
             frac = max(0.0, min(1.0, lq / 100.0))
             self.progress_signal.set_fraction(frac)
@@ -621,12 +738,12 @@ class DynamicLockApp(Gtk.Window):
             self.lbl_signal_val.set_text(f"{lq}% • {rssi_str}")
             
             if lq >= thresh:
-                self.lbl_status.set_markup("<span color='#2ecc71'>● <b>À proximité immédiate</b></span>")
+                self.lbl_status.set_markup(f"<span color='#2ecc71'>● <b>{self.t['status_close']}</b></span>")
             else:
-                self.lbl_status.set_markup("<span color='#f39c12'>● <b>Éloignement détecté</b></span>")
+                self.lbl_status.set_markup(f"<span color='#f39c12'>● <b>{self.t['status_away']}</b></span>")
         else:
             self.progress_signal.set_fraction(0.5)
-            self.lbl_status.set_markup("<span color='#3498db'>● Recherche du signal...</span>")
+            self.lbl_status.set_markup(f"<span color='#3498db'>● {self.t['status_searching']}</span>")
             self.lbl_signal_val.set_text("--")
 
         return True
