@@ -1,6 +1,10 @@
 [Desktop Entry]
-Name=Verrouillage Dynamique
-Comment=Gérer le verrouillage automatique par proximité Bluetooth
+Name=Dynamic Lock
+Name[fr]=Verrouillage Dynamique
+GenericName=Proximity Screen Lock
+GenericName[fr]=Verrouillage par proximité
+Comment=Automatic Bluetooth proximity lock for Linux
+Comment[fr]=Verrouillage automatique de session par proximité Bluetooth
 Exec=dynamic-lock-gui
 Icon=dynamic-lock
 Terminal=false
