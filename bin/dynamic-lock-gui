@@ -105,8 +105,8 @@ DEFAULT_CONFIG = {
     "language": "en",       # "en" by default, "fr" supported
     "theme_mode": "system",  # "system", "dark", "light"
     "preset": "strict",
-    "device_mac": "3C:B0:ED:DC:A2:39",
-    "device_name": "Nothing Phone (3)",
+    "device_mac": "",
+    "device_name": "",
     "lq_threshold": 95,
     "rssi_threshold": -2,
     "delay_seconds": 1.0,
