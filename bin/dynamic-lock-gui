@@ -716,12 +716,13 @@ class DynamicLockApp(Gtk.Window):
             except Exception:
                 rssi = None
 
-        # Battery update
+        # Battery update from native Bluetooth
         try:
-            out = subprocess.check_output(['adb', 'shell', 'dumpsys', 'battery'], stderr=subprocess.DEVNULL).decode()
             for line in out.splitlines():
-                if 'level:' in line:
+                if 'Battery Percentage:' in line:
                     bval = line.split(':')[1].strip()
+                    if '(' in bval:
+                        bval = bval.split('(')[1].replace(')', '').strip()
                     self.lbl_battery.set_text(f"🔋 {bval}%")
                     break
         except Exception:

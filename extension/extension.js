@@ -259,12 +259,13 @@ class DynamicLockMenu extends PanelMenu.Button {
         let lq = null;
         let rssi = null;
         let connected = false;
+        let infoOutput = "";
 
         try {
             let [ok, out] = GLib.spawn_command_line_sync(`bluetoothctl info ${mac}`);
             if (ok) {
-                let s = imports.byteArray.toString(out);
-                connected = s.includes('Connected: yes');
+                infoOutput = imports.byteArray.toString(out);
+                connected = infoOutput.includes('Connected: yes');
             }
         } catch (e) {}
 
@@ -290,16 +291,12 @@ class DynamicLockMenu extends PanelMenu.Button {
             } catch (e) {}
         }
 
-        // Get battery level (via adb or bluez)
+        // Get battery level (via native BlueZ)
         let batteryStr = '--';
         try {
-            let [ok, out] = GLib.spawn_command_line_sync('adb shell dumpsys battery');
-            if (ok) {
-                let s = imports.byteArray.toString(out);
-                let match = s.match(/level:\s*(\d+)/i);
-                if (match) {
-                    batteryStr = `${match[1]}%`;
-                }
+            let match = infoOutput.match(/Battery Percentage:\s*(?:0x[0-9a-fA-F]+\s*\()?(\d+)\)?/i);
+            if (match) {
+                batteryStr = `${match[1]}%`;
             }
         } catch (e) {}
 
