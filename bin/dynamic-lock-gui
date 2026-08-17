@@ -42,9 +42,10 @@ TRANSLATIONS = {
         "req_sensitivity": "Required Sensitivity :",
         "lock_delay": "Lock Delay :",
         "test_lock": "🔒 Test Lock Session",
-        "status_close": "● In close proximity",
-        "status_away": "● Moving away detected",
-        "status_lost": "● Signal lost (Lock ready)",
+        "status_close": "● Armed & In close proximity",
+        "status_away": "● Armed - Moving away detected",
+        "status_lost": "● Standby (Device offline / No lock)",
+        "status_standby": "● Standby (Device offline / No lock)",
         "status_none": "● No device selected",
         "status_searching": "● Searching for signal...",
         "notif_title": "Notifications & Alerts",
@@ -79,9 +80,10 @@ TRANSLATIONS = {
         "req_sensitivity": "Sensibilité requise :",
         "lock_delay": "Délai avant verrouillage :",
         "test_lock": "🔒 Tester le verrouillage immédiat",
-        "status_close": "● À proximité immédiate",
-        "status_away": "● Éloignement détecté",
-        "status_lost": "● Signal perdu (Verrouillage prêt)",
+        "status_close": "● Armé & À proximité immédiate",
+        "status_away": "● Armé - Éloignement détecté",
+        "status_lost": "● En veille (Appareil hors ligne / Aucun verrouillage)",
+        "status_standby": "● En veille (Appareil hors ligne / Aucun verrouillage)",
         "status_none": "● Aucun appareil",
         "status_searching": "● Recherche du signal...",
         "notif_title": "Notifications & Alertes",
@@ -729,8 +731,8 @@ class DynamicLockApp(Gtk.Window):
 
         if not connected:
             self.progress_signal.set_fraction(0.0)
-            self.lbl_status.set_markup(f"<span color='#e74c3c'>● <b>{self.t['status_lost']}</b></span>")
-            self.lbl_signal_val.set_text("Offline")
+            self.lbl_status.set_markup(f"<span color='#95a5a6'>● <b>{self.t['status_standby']}</b></span>")
+            self.lbl_signal_val.set_text("Standby")
         elif lq is not None:
             frac = max(0.0, min(1.0, lq / 100.0))
             self.progress_signal.set_fraction(frac)

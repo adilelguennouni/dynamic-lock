@@ -19,8 +19,10 @@ const I18N = {
         "lock_active": "Dynamic Lock Active",
         "lock_now": "🔒 Lock Session Now",
         "open_settings": "⚙️ Full Preferences...",
-        "signal_out_of_range": "📡 Out of range",
+        "signal_standby": "⏸️ Standby (Safe)",
+        "signal_armed": "🛡️ Armed",
         "signal_connected": "📡 Connected",
+        "signal_out_of_range": "📡 Standby (Offline)",
         "presets": {
             "strict": "🎯 Desk (0-1m)",
             "comfort": "🛋️ Room (2-3m)",
@@ -34,8 +36,10 @@ const I18N = {
         "lock_active": "Verrouillage actif",
         "lock_now": "🔒 Verrouiller la session maintenant",
         "open_settings": "⚙️ Réglages complets...",
-        "signal_out_of_range": "📡 Hors de portée",
+        "signal_standby": "⏸️ En veille (Sécurisé)",
+        "signal_armed": "🛡️ Armé",
         "signal_connected": "📡 Connecté",
+        "signal_out_of_range": "📡 En veille (Hors ligne)",
         "presets": {
             "strict": "🎯 Bureau Strict (0-1m)",
             "comfort": "🛋️ Pièce / Confort (2-3m)",
@@ -300,10 +304,13 @@ class DynamicLockMenu extends PanelMenu.Button {
         } catch (e) {}
 
         if (!connected) {
-            this._telemetryItem.label.text = `${t.signal_out_of_range} | 🔋 ${batteryStr}`;
+            this._telemetryItem.label.text = `${t.signal_standby} | 🔋 ${batteryStr}`;
         } else if (lq !== null) {
             let rssiStr = rssi !== null ? `${rssi} dBm` : '';
-            this._telemetryItem.label.text = `📡 ${lq}% (${rssiStr}) | 🔋 ${batteryStr}`;
+            let thresh = this._config.lq_threshold || 90;
+            let isArmed = (lq >= thresh);
+            let stateTag = isArmed ? t.signal_armed : t.signal_connected;
+            this._telemetryItem.label.text = `${stateTag} (${lq}% • ${rssiStr}) | 🔋 ${batteryStr}`;
         } else {
             this._telemetryItem.label.text = `${t.signal_connected} | 🔋 ${batteryStr}`;
         }
